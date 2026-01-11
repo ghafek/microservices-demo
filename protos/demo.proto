@@ -260,3 +260,89 @@ message Ad {
     // short advertisement text to display.
     string text = 2;
 }
+
+// -----------------Order Tracking service-----------------
+
+service OrderTrackingService {
+    // Registers a new order + tracking ID. Should be safe to call multiple times
+    // for the same order_id (idempotent behavior is recommended).
+    rpc CreateOrderTracking(CreateOrderTrackingRequest) returns (CreateOrderTrackingResponse) {}
+
+    // Returns the current status and tracking ID for an order.
+    rpc GetOrderStatus(GetOrderStatusRequest) returns (GetOrderStatusResponse) {}
+
+    // Returns the status/event timeline for an order.
+    rpc ListOrderEvents(ListOrderEventsRequest) returns (ListOrderEventsResponse) {}
+
+    // Returns the order details (items/address) plus current status and events.
+    rpc GetOrderDetails(GetOrderDetailsRequest) returns (GetOrderDetailsResponse) {}
+
+}
+
+enum OrderTrackingStatus {
+    ORDER_TRACKING_STATUS_UNSPECIFIED = 0;
+    PLACED = 1;
+    SHIPPED = 2;
+    OUT_FOR_DELIVERY = 3;
+    DELIVERED = 4;
+    CANCELED = 5;
+}
+
+message OrderTrackingInfo {
+    string order_id = 1;
+    string tracking_id = 2;
+    OrderTrackingStatus current_status = 3;
+    int64 last_updated_unix_ms = 4;
+}
+
+message OrderEvent {
+    OrderTrackingStatus status = 1;
+    int64 timestamp_unix_ms = 2;
+    string message = 3;
+}
+
+message CreateOrderTrackingRequest {
+    string order_id = 1;
+    string tracking_id = 2;
+    string email = 3;
+    Address address = 4;
+    repeated OrderItem items = 5;
+    string note = 6;
+}
+
+message CreateOrderTrackingResponse {
+    bool created = 1;
+    OrderTrackingInfo info = 2;
+}
+
+message GetOrderStatusRequest {
+    string order_id = 1;
+}
+
+message GetOrderStatusResponse {
+    OrderTrackingInfo info = 1;
+}
+
+message ListOrderEventsRequest {
+    string order_id = 1;
+}
+
+message ListOrderEventsResponse {
+    OrderTrackingInfo info = 1;
+    repeated OrderEvent events = 2;
+}
+
+message GetOrderDetailsRequest {
+    string order_id = 1;
+}
+
+message GetOrderDetailsResponse {
+    OrderTrackingInfo info = 1;
+    string email = 2;
+    Address address = 3;
+    repeated OrderItem items = 4;
+    string note = 5;
+    repeated OrderEvent events = 6;
+}
+
+// ---------------Order Tracking Service----------

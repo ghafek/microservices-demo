@@ -1,0 +1,164 @@
+<!--
+ Copyright 2020 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+{{ define "track" }}
+
+    {{ template "header" . }}
+
+    <div {{ with $.platform_css }} class="{{.}}" {{ end }}>
+        <span class="platform-flag">
+            {{$.platform_name}}
+        </span>
+    </div>
+
+    <main role="main" class="order">
+
+        <section class="container order-complete-section">
+            <div class="row">
+                <div class="col-12 text-center">
+                    <h3>
+                        Order Tracking details
+                    </h3>
+                </div>
+            </div>
+
+            <div class="row border-bottom-solid padding-y-24">
+                <div class="col-6 pl-md-0">
+                    Confirmation #
+                </div>
+                <div class="col-6 pr-md-0 text-right">
+                    {{ $.order_id }}
+                </div>
+            </div>
+            <div class="row border-bottom-solid padding-y-24">
+                <div class="col-6 pl-md-0">
+                    Tracking #
+                </div>
+                <div class="col-6 pr-md-0 text-right">
+                    {{ $.tracking_id }}
+                </div>
+            </div>
+            <div class="row padding-y-24">
+                <div class="col-6 pl-md-0">
+                    Current Status
+                </div>
+                <div class="col-6 pr-md-0 text-right">
+                    {{ $.current_status }}
+                </div>
+            </div>
+
+            {{ if $.delivery_email }}
+            <div class="row border-bottom-solid padding-y-24">
+                <div class="col-6 pl-md-0">
+                    Recipient
+                </div>
+                <div class="col-6 pr-md-0 text-right">
+                    {{ $.delivery_email }}
+                </div>
+            </div>
+            {{ end }}
+
+            {{ with $.delivery_addr }}
+            <div class="row padding-y-24">
+                <div class="col-6 pl-md-0">
+                    Address
+                </div>
+                <div class="col-6 pr-md-0 text-right">
+                    <div>{{ .StreetAddress }}</div>
+                    <div>{{ .City }}{{ if .State }}, {{ .State }}{{ end }} {{ .ZipCode }}</div>
+                    <div>{{ .Country }}</div>
+                </div>
+            </div>
+            {{ end }}
+
+            {{ if gt (len $.items) 0 }}
+            {{ range $.items }}
+            <div class="row cart-summary-item-row">
+                <div class="col-md-4 pl-md-0">
+                    <a href="{{ $.baseUrl }}/product/{{.Item.Id}}">
+                        <img class="img-fluid" alt="" src="{{ $.baseUrl }}{{.Item.Picture}}" />
+                    </a>
+                </div>
+                <div class="col-md-8 pr-md-0">
+                    <div class="row">
+                        <div class="col">
+                            <h4>{{ .Item.Name }}</h4>
+                        </div>
+                    </div>
+                    <div class="row cart-summary-item-row-item-id-row">
+                        <div class="col">
+                            SKU #{{ .Item.Id }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            Quantity: {{ .Quantity }}
+                        </div>
+                        <div class="col pr-md-0 text-right">
+                            {{ if .Price }}
+                            <strong>{{ renderMoney .Price }}</strong>
+                            {{ end }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {{ end }}
+            {{ end }}
+
+        </section>
+
+        <section class="container">
+            <div class="row mb-3 py-2">
+                <div class="col-12 pl-md-0">
+                    <h3>Tracking updates</h3>
+                </div>
+            </div>
+
+            {{ if eq (len $.events) 0 }}
+            <div class="row">
+                <div class="col-12 pl-md-0">
+                    <p>No tracking events yet.</p>
+                </div>
+            </div>
+            {{ else }}
+            {{ range $.events }}
+            <div class="row border-bottom-solid padding-y-24">
+                <div class="col-8 pl-md-0">
+                    <strong>{{ .Status }}</strong>
+                    {{ if .Message }}
+                        — {{ .Message }}
+                    {{ end }}
+                </div>
+                <div class="col-4 pr-md-0 text-right">
+                    {{ .When }}
+                </div>
+            </div>
+            {{ end }}
+            {{ end }}
+
+            <div class="row padding-y-24">
+                <div class="col-12 text-center">
+                    <a class="cymbal-button-primary" href="{{ $.baseUrl }}/" role="button">
+                        Continue Shopping
+                    </a>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    {{ template "footer" . }}
+{{ end }}

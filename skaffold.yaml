@@ -47,6 +47,8 @@ build:
     context: src/frontend
   - image: adservice
     context: src/adservice
+  - image: ordertrackingservice
+    context: src/ordertrackingservice
   tagPolicy:
     gitCommit: {}
   local:
@@ -82,7 +84,7 @@ profiles:
   - command: debug
   patches:
   - op: replace
-    path: /build/artifacts/7/docker/dockerfile
+    path: /build/artifacts/8/docker/dockerfile
     value: Dockerfile.debug
 # The "network-policies" profile is not used by default.
 # You can use it in isolation or in combination with other profiles:

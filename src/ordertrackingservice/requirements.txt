@@ -1,0 +1,4 @@
+grpcio>=1.75.0
+grpcio-tools>=1.75.0
+grpcio-health-checking>=1.75.0
+protobuf>=5.0.0

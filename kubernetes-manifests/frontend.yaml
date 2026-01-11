@@ -78,6 +78,8 @@ spec:
             value: "shippingservice:50051"
           - name: CHECKOUT_SERVICE_ADDR
             value: "checkoutservice:5050"
+          - name: ORDER_TRACKING_SERVICE_ADDR
+            value: "ordertrackingservice:8080"
           - name: AD_SERVICE_ADDR
             value: "adservice:9555"
           - name: SHOPPING_ASSISTANT_SERVICE_ADDR

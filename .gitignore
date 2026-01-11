@@ -14,6 +14,8 @@
 *.ipr
 *.iws
 *.pyc
+__pycache__/
+.pytest_cache/
 *.swp
 *.tfstate*
 *.tfvars

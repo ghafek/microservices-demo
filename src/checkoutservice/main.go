@@ -83,6 +83,9 @@ type checkoutService struct {
 
 	paymentSvcAddr string
 	paymentSvcConn *grpc.ClientConn
+
+	orderTrackingSvcAddr string
+	orderTrackingSvcConn *grpc.ClientConn
 }
 
 func main() {
@@ -114,6 +117,7 @@ func main() {
 	mustMapEnv(&svc.currencySvcAddr, "CURRENCY_SERVICE_ADDR")
 	mustMapEnv(&svc.emailSvcAddr, "EMAIL_SERVICE_ADDR")
 	mustMapEnv(&svc.paymentSvcAddr, "PAYMENT_SERVICE_ADDR")
+	mapEnv(&svc.orderTrackingSvcAddr, "ORDER_TRACKING_SERVICE_ADDR")
 
 	mustConnGRPC(ctx, &svc.shippingSvcConn, svc.shippingSvcAddr)
 	mustConnGRPC(ctx, &svc.productCatalogSvcConn, svc.productCatalogSvcAddr)
@@ -121,6 +125,11 @@ func main() {
 	mustConnGRPC(ctx, &svc.currencySvcConn, svc.currencySvcAddr)
 	mustConnGRPC(ctx, &svc.emailSvcConn, svc.emailSvcAddr)
 	mustConnGRPC(ctx, &svc.paymentSvcConn, svc.paymentSvcAddr)
+	if svc.orderTrackingSvcAddr != "" {
+		mustConnGRPC(ctx, &svc.orderTrackingSvcConn, svc.orderTrackingSvcAddr)
+	} else {
+		log.Warn("ORDER_TRACKING_SERVICE_ADDR not set; order tracking integration disabled")
+	}
 
 	log.Infof("service config: %+v", svc)
 
@@ -207,6 +216,10 @@ func mustMapEnv(target *string, envKey string) {
 	*target = v
 }
 
+func mapEnv(target *string, envKey string) {
+	*target = os.Getenv(envKey)
+}
+
 func mustConnGRPC(ctx context.Context, conn **grpc.ClientConn, addr string) {
 	var err error
 	_, cancel := context.WithTimeout(ctx, time.Second*3)
@@ -237,7 +250,7 @@ func (cs *checkoutService) PlaceOrder(ctx context.Context, req *pb.PlaceOrderReq
 
 	prep, err := cs.prepareOrderItemsAndShippingQuoteFromCart(ctx, req.UserId, req.UserCurrency, req.Address)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%v", err)
 	}
 
 	total := pb.Money{CurrencyCode: req.UserCurrency,
@@ -268,6 +281,29 @@ func (cs *checkoutService) PlaceOrder(ctx context.Context, req *pb.PlaceOrderReq
 		ShippingCost:       prep.shippingCostLocalized,
 		ShippingAddress:    req.Address,
 		Items:              prep.orderItems,
+	}
+
+	if cs.orderTrackingSvcConn != nil {
+		trackingCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		trackingResp, err := pb.NewOrderTrackingServiceClient(cs.orderTrackingSvcConn).CreateOrderTracking(trackingCtx, &pb.CreateOrderTrackingRequest{
+			OrderId:    orderResult.GetOrderId(),
+			TrackingId: orderResult.GetShippingTrackingId(),
+			Email:      req.GetEmail(),
+			Address:    req.GetAddress(),
+			Items:      orderResult.GetItems(),
+			Note:       "created-by-checkoutservice",
+		})
+		if err != nil {
+			log.WithField("order_id", orderResult.GetOrderId()).WithError(err).Warn("CreateOrderTracking failed; continuing checkout")
+		} else {
+			log.WithFields(logrus.Fields{
+				"order_id":    orderResult.GetOrderId(),
+				"created":     trackingResp.GetCreated(),
+				"tracking_id": trackingResp.GetInfo().GetTrackingId(),
+				"status":      trackingResp.GetInfo().GetCurrentStatus().String(),
+			}).Info("order tracking created")
+		}
 	}
 
 	if err := cs.sendOrderConfirmation(ctx, req.Email, orderResult); err != nil {

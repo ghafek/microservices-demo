@@ -232,8 +232,163 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("location", baseUrl + "/cart")
+	w.Header().Set("location", baseUrl+"/cart")
 	w.WriteHeader(http.StatusFound)
+}
+
+func (fe *frontendServer) trackOrderHandler(w http.ResponseWriter, r *http.Request) {
+	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
+	if fe.orderTrackingSvcConn == nil {
+		renderHTTPError(log, r, w, errors.New("order tracking service not configured"), http.StatusServiceUnavailable)
+		return
+	}
+	orderID := r.URL.Query().Get("order_id")
+	if orderID == "" {
+		renderHTTPError(log, r, w, errors.New("order_id query param is required"), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	client := pb.NewOrderTrackingServiceClient(fe.orderTrackingSvcConn)
+
+	detailsResp, err := client.GetOrderDetails(ctx, &pb.GetOrderDetailsRequest{OrderId: orderID})
+	if err != nil {
+		renderHTTPError(log, r, w, errors.Wrap(err, "GetOrderDetails failed"), http.StatusBadGateway)
+		return
+	}
+
+	info := detailsResp.GetInfo()
+	carrierName := "Online Boutique Delivery Service"
+
+	deliveredWhere := ""
+	if addr := detailsResp.GetAddress(); addr != nil {
+		city := strings.TrimSpace(addr.GetCity())
+		country := strings.TrimSpace(addr.GetCountry())
+		switch {
+		case city != "" && country != "":
+			deliveredWhere = city + ", " + country
+		case city != "":
+			deliveredWhere = city
+		case country != "":
+			deliveredWhere = country
+		}
+	}
+
+	// Best-effort cart size for the header.
+	cart, err := fe.getCart(r.Context(), sessionID(r))
+	if err != nil {
+		log.WithField("error", err).Warn("could not retrieve cart")
+	}
+
+	currencies, err := fe.getCurrencies(r.Context())
+	if err != nil {
+		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve currencies"), http.StatusInternalServerError)
+		return
+	}
+
+	type orderItemView struct {
+		Item     *pb.Product
+		Quantity int32
+		Price    *pb.Money
+	}
+	items := make([]orderItemView, 0, len(detailsResp.GetItems()))
+	for _, oi := range detailsResp.GetItems() {
+		pid := oi.GetItem().GetProductId()
+		p, perr := fe.getProduct(r.Context(), pid)
+		if perr != nil {
+			log.WithField("error", perr).WithField("product", pid).Warn("could not retrieve product")
+			p = &pb.Product{Id: pid, Name: pid}
+		}
+		items = append(items, orderItemView{
+			Item:     p,
+			Quantity: oi.GetItem().GetQuantity(),
+			Price:    oi.GetCost(),
+		})
+	}
+	type eventView struct {
+		Status  string
+		When    string
+		Message string
+	}
+	formatEventTime := func(unixMs int64) string {
+		if unixMs == 0 {
+			return ""
+		}
+		return time.UnixMilli(unixMs).Format("2006-01-02 15:04:05")
+	}
+
+	// Build a fixed 3-stage timeline. If a stage hasn't happened yet, show Pending with an ETA.
+	statusTime := map[pb.OrderTrackingStatus]int64{}
+	for _, ev := range detailsResp.GetEvents() {
+		ts := ev.GetTimestampUnixMs()
+		if ts == 0 {
+			continue
+		}
+		st := ev.GetStatus()
+		if prev, ok := statusTime[st]; !ok || ts < prev {
+			statusTime[st] = ts
+		}
+	}
+
+	placedTs := statusTime[pb.OrderTrackingStatus_PLACED]
+	shippedTs := statusTime[pb.OrderTrackingStatus_SHIPPED]
+	outForDeliveryTs := statusTime[pb.OrderTrackingStatus_OUT_FOR_DELIVERY]
+	deliveredTs := statusTime[pb.OrderTrackingStatus_DELIVERED]
+
+	etaOrPending := func(actualTs int64, etaOffset time.Duration) string {
+		if actualTs != 0 {
+			return formatEventTime(actualTs)
+		}
+		if placedTs == 0 {
+			return "Pending"
+		}
+		eta := time.UnixMilli(placedTs).Add(etaOffset)
+		return "Pending (ETA: " + eta.Format("2006-01-02 15:04:05") + ")"
+	}
+
+	events := []eventView{
+		{
+			Status:  "Order placed",
+			When:    etaOrPending(placedTs, 0),
+			Message: fmt.Sprintf("Order #%s", info.GetOrderId()),
+		},
+		{
+			Status:  "Shipment",
+			When:    etaOrPending(shippedTs, 2*time.Hour),
+			Message: fmt.Sprintf("Shipped by %s (Tracking #%s)", carrierName, info.GetTrackingId()),
+		},
+		{
+			Status:  "Out for delivery",
+			When:    etaOrPending(outForDeliveryTs, 3*time.Hour),
+			Message: "Out for delivery",
+		},
+		{
+			Status: "Delivered",
+			When:   etaOrPending(deliveredTs, 4*time.Hour),
+			Message: func() string {
+				if deliveredWhere != "" {
+					return deliveredWhere
+				}
+				return ""
+			}(),
+		},
+	}
+
+	if err := templates.ExecuteTemplate(w, "track", injectCommonTemplateData(r, map[string]interface{}{
+		"show_currency":  false,
+		"currencies":     currencies,
+		"cart_size":      cartSize(cart),
+		"order_id":       info.GetOrderId(),
+		"tracking_id":    info.GetTrackingId(),
+		"current_status": info.GetCurrentStatus().String(),
+		"items":          items,
+		"events":         events,
+		"delivery_email": detailsResp.GetEmail(),
+		"delivery_addr":  detailsResp.GetAddress(),
+	})); err != nil {
+		log.Println(err)
+	}
 }
 
 func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Request) {
@@ -244,7 +399,7 @@ func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Reques
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to empty cart"), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("location", baseUrl + "/")
+	w.Header().Set("location", baseUrl+"/")
 	w.WriteHeader(http.StatusFound)
 }
 
@@ -423,7 +578,7 @@ func (fe *frontendServer) logoutHandler(w http.ResponseWriter, r *http.Request) 
 		c.MaxAge = -1
 		http.SetCookie(w, c)
 	}
-	w.Header().Set("Location", baseUrl + "/")
+	w.Header().Set("Location", baseUrl+"/")
 	w.WriteHeader(http.StatusFound)
 }
 
