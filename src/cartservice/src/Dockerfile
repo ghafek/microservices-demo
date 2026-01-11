@@ -13,7 +13,9 @@
 # limitations under the License.
 
 # https://mcr.microsoft.com/product/dotnet/sdk
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.100-noble@sha256:c7445f141c04f1a6b454181bd098dcfa606c61ba0bd213d0a702489e5bd4cd71 AS builder
+# Use TARGETPLATFORM so cross-builds (e.g. building linux/amd64 on Apple Silicon)
+# execute tooling (like Grpc.Tools/protoc) in the target architecture image.
+FROM --platform=$TARGETPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.100-noble@sha256:c7445f141c04f1a6b454181bd098dcfa606c61ba0bd213d0a702489e5bd4cd71 AS builder
 ARG TARGETARCH
 WORKDIR /app
 COPY cartservice.csproj .
