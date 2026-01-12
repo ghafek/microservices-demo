@@ -26,5 +26,9 @@ The application is exposed publicly via a Kubernetes `Service` named `frontend-e
 
 ## Live demo URL
 
-- Current URL- (copy/paste):
-	-{URL}
+- Current URL (copy/paste):
+	- http://ac60f796a580f445280f14da1d58dc8f-59860552.eu-central-1.elb.amazonaws.com
+
+## Demo video
+
+- https://tubcloud.tu-berlin.de/s/ZFSmYeQXCS5BMmA
